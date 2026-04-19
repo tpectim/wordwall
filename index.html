@@ -3,15 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>互動出題與作答系統 (全螢幕版)</title>
+  <title>互動出題與作答系統 (全螢幕 + 雲端題庫版)</title>
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <style>
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; color: #333; margin: 0; padding: 0; line-height: 1.6; }
-    .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+    .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
     .panel { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
     h1, h2, h3 { margin-top: 0; color: #2c3e50; }
     .flex-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
     input[type="text"] { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+    select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
     button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: opacity 0.2s; }
     button:hover { opacity: 0.8; }
     button:disabled { background: #ccc; cursor: not-allowed; }
@@ -30,6 +31,10 @@
     .image-preview { max-width: 120px; max-height: 120px; border: 1px solid #ddd; border-radius: 4px; margin-top: 5px; display: block; object-fit: contain; background: #fff;}
     .remove-img-btn { background: #e74c3c; color: white; padding: 4px 8px; font-size: 12px; margin-top: 5px; border-radius: 4px; cursor: pointer; border: none;}
     input[type="file"] { max-width: 200px; font-size: 14px; }
+    
+    /* 存檔讀取區塊的三欄式排版 */
+    .import-export-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; align-items: start; }
+    .data-box { background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef; }
 
     /* === 全螢幕作答區樣式 (無捲動設計) === */
     .play-fullscreen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #f3f4f6; z-index: 9999; display: flex; flex-direction: column; padding: 2vh 2vw; box-sizing: border-box; overflow: hidden; }
@@ -38,20 +43,15 @@
     
     /* 題目區 (佔 50%) 圖左文右 */
     .question-section { flex: 1; background: #fff; border-radius: 12px; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 3vw; padding: 2vh; box-shadow: 0 4px 8px rgba(0,0,0,0.05); overflow: hidden; }
-    
-    /* 嚴格控制題目圖片大小為 40vh */
     .question-image { max-height: 40vh; max-width: 40vw; object-fit: contain; border-radius: 8px; }
     .question-text { font-size: clamp(1.5rem, 3.5vw, 3rem); font-weight: bold; color: #2c3e50; max-width: 50%; }
 
     /* 選項區 (佔 50%) 2x2 網格 */
     .options-section { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2vh; }
-    
-    /* 選項按鈕：圖左文右 */
     .play-option-btn { position: relative; overflow: hidden; background: #fff; border: 3px solid #3498db; border-radius: 12px; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 2vw; padding: 1vh 2vw; cursor: pointer; transition: all 0.2s; color: #3498db; text-align: left; box-shadow: 0 4px 6px rgba(0,0,0,0.05);}
     .play-option-btn:hover:not(:disabled) { background: #eaf4fc; transform: translateY(-2px); }
     .play-option-btn:disabled { cursor: default; }
     
-    /* 嚴格控制選項圖片大小為 20vh (題目圖片的一半) */
     .option-image { max-height: 20vh; max-width: 20vw; object-fit: contain; border-radius: 4px; }
     .option-text { font-size: clamp(1.2rem, 2.5vw, 2.2rem); font-weight: bold; flex: 1; }
 
@@ -74,9 +74,7 @@
     .choice-wrong { animation: shake 0.4s ease forwards; opacity: 0.8; }
     .choice-fade { opacity: 0.4; border-color: #ccc; filter: grayscale(100%); }
     
-    /* 下一題浮動按鈕 (置中於下方) */
     .next-btn-overlay { position: absolute; bottom: 3vh; left: 50%; transform: translateX(-50%); z-index: 10; animation: pop 0.3s ease; }
-    
     .result-screen { height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; background: #fff; border-radius: 12px; }
     .score-text { font-size: 5rem; color: #2c3e50; font-weight: bold; margin: 20px 0; }
   </style>
@@ -145,20 +143,37 @@
 
       <div class="panel">
         <h2>💾 資料存檔與讀取</h2>
-        <div class="edit-options-grid" style="align-items: end;">
-          <div>
-            <h3>匯出 JSON 檔</h3>
-            <p style="font-size: 0.9em; color: #666; margin-top: 0;">將目前的測驗下載到電腦中備份。</p>
+        <div class="import-export-grid">
+          
+          <div class="data-box">
+            <h3 style="margin-top: 0;">📤 匯出備份 (本機)</h3>
+            <p style="font-size: 0.9em; color: #666;">將測驗下載到電腦中。</p>
             <div class="flex-row">
-              <input type="text" v-model="exportFilename" placeholder="自訂檔名 (留空為預設日期)">
-              <button class="btn-primary" @click="exportJSON">📥 下載</button>
+              <input type="text" v-model="exportFilename" placeholder="自訂檔名" style="width: 100%;">
             </div>
+            <button class="btn-primary" style="width: 100%;" @click="exportJSON">下載 JSON</button>
           </div>
-          <div>
-            <h3>讀取 JSON 檔</h3>
-            <p style="font-size: 0.9em; color: #666; margin-top: 0;">選擇之前下載的檔案，將會覆蓋目前所有題目。</p>
-            <input type="file" accept=".json" @change="importJSONFile" style="padding: 5px; border: 1px solid #ccc; border-radius: 4px; width: 100%; box-sizing: border-box;">
+          
+          <div class="data-box">
+            <h3 style="margin-top: 0;">📥 讀取備份 (本機)</h3>
+            <p style="font-size: 0.9em; color: #666;">覆蓋目前所有題目。</p>
+            <input type="file" accept=".json" @change="importJSONFile" style="width: 100%; padding: 5px; box-sizing: border-box;">
           </div>
+
+          <div class="data-box" style="border-color: #3498db; background: #ebf5fb;">
+            <h3 style="margin-top: 0; color: #2980b9;">☁️ 雲端題庫 (GitHub)</h3>
+            <p style="font-size: 0.9em; color: #666;">從 tpectim/wordwall 讀取。</p>
+            <div class="flex-row">
+              <select v-model="selectedGithubUrl" style="width: 100%;">
+                <option value="" disabled>{{ githubStatusMsg }}</option>
+                <option v-for="file in githubFiles" :key="file.sha" :value="file.download_url">
+                  {{ file.name }}
+                </option>
+              </select>
+            </div>
+            <button class="btn-primary" style="width: 100%; background: #2980b9;" @click="loadFromGithub" :disabled="!selectedGithubUrl">從雲端載入</button>
+          </div>
+
         </div>
       </div>
     </div>
@@ -221,18 +236,17 @@
         return {
           mode: 'edit',
           exportFilename: '',
+          // GitHub 雲端變數
+          githubFiles: [],
+          selectedGithubUrl: '',
+          githubStatusMsg: '載入題庫庫列表...',
+          
           quiz: {
-            title: '動物圖文測驗',
+            title: '我的互動測驗',
             questions: [this.createNewQuestion()]
           },
           playState: {
-            currentIndex: 0,
-            score: 0,
-            answered: false,         
-            selectedOptionId: null,  
-            wrongOptionIds: [],      
-            tryCount: 0,             
-            isFinished: false
+            currentIndex: 0, score: 0, answered: false, selectedOptionId: null, wrongOptionIds: [], tryCount: 0, isFinished: false
           }
         };
       },
@@ -241,15 +255,20 @@
           return this.quiz.questions[this.playState.currentIndex];
         }
       },
+      mounted() {
+        // 網頁載入時自動去抓取 GitHub JSON 列表
+        this.fetchGithubFiles();
+      },
       methods: {
         generateId() { return Math.random().toString(36).substr(2, 9); },
+        // 修正 1：創建選項時，文字預設為『空字串』，保證檔名讀取能100%成功
         createNewOption() { return { id: this.generateId(), text: '', image: '', isCorrect: false }; },
         createNewQuestion() {
           return {
             id: this.generateId(), text: '', image: '',
             options: [
-              { id: this.generateId(), text: '選項 1', image: '', isCorrect: true },
-              { id: this.generateId(), text: '選項 2', image: '', isCorrect: false }
+              { id: this.generateId(), text: '', image: '', isCorrect: true },  
+              { id: this.generateId(), text: '', image: '', isCorrect: false } 
             ]
           };
         },
@@ -276,7 +295,7 @@
           });
         },
         
-        // --- 圖片處理 (加入 maxSize 參數，支援動態畫質壓縮) ---
+        // --- 圖片處理 ---
         processImage(file, maxSize, callback) {
           if (!file) return;
           const reader = new FileReader();
@@ -294,7 +313,6 @@
               canvas.width = width; canvas.height = height;
               const ctx = canvas.getContext('2d');
               
-              // 填白底防 PNG 透明區塊變黑
               ctx.fillStyle = '#ffffff';
               ctx.fillRect(0, 0, width, height);
               ctx.drawImage(img, 0, 0, width, height);
@@ -305,7 +323,6 @@
           reader.readAsDataURL(file);
         },
         
-        // 題目圖片壓縮上限：400px (以確保放大2倍時依然清晰)
         handleQuestionImage(event, qIndex) {
           const file = event.target.files[0];
           if (!file) return;
@@ -316,11 +333,12 @@
           this.processImage(file, 400, (base64) => { this.quiz.questions[qIndex].image = base64; });
         },
         
-        // 選項圖片壓縮上限：200px
         handleOptionImage(event, qIndex, oIndex) {
           const file = event.target.files[0];
           if (!file) return;
           const filenameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+          
+          // 此時因為預設選項是空字串，一定會觸發此條件寫入檔名
           if (!this.quiz.questions[qIndex].options[oIndex].text) {
              this.quiz.questions[qIndex].options[oIndex].text = filenameWithoutExt;
           }
@@ -335,7 +353,7 @@
           document.getElementById(inputId).value = '';
         },
 
-        // --- 存檔與讀取 ---
+        // --- 存檔讀取 (包含 GitHub 整合) ---
         exportJSON() {
           const dataStr = JSON.stringify(this.quiz, null, 2);
           const blob = new Blob([dataStr], { type: "application/json" });
@@ -350,6 +368,7 @@
           link.href = url; link.download = filename; link.click();
           URL.revokeObjectURL(url);
         },
+        
         importJSONFile(event) {
           const file = event.target.files[0];
           if (!file) return;
@@ -369,6 +388,44 @@
             event.target.value = '';
           };
           reader.readAsText(file);
+        },
+
+        // 讀取 GitHub 目錄
+        async fetchGithubFiles() {
+          try {
+            const response = await fetch('https://api.github.com/repos/tpectim/wordwall/contents/');
+            if (!response.ok) throw new Error('無法連線到 GitHub');
+            const data = await response.json();
+            
+            // 過濾出結尾是 .json 的檔案
+            this.githubFiles = data.filter(file => file.name.endsWith('.json'));
+            
+            if (this.githubFiles.length > 0) {
+              this.githubStatusMsg = '請選擇雲端題庫...';
+            } else {
+              this.githubStatusMsg = '目前雲端無題庫檔案';
+            }
+          } catch (err) {
+            console.warn('GitHub 載入錯誤:', err);
+            this.githubStatusMsg = '無法連線至雲端題庫';
+          }
+        },
+
+        // 下載並載入指定的 GitHub 檔案
+        async loadFromGithub() {
+          if (!this.selectedGithubUrl) return;
+          try {
+            const response = await fetch(this.selectedGithubUrl);
+            const parsed = await response.json();
+            if (parsed && parsed.questions) {
+              this.quiz = parsed;
+              alert('☁️ 從雲端載入成功！');
+            } else {
+              alert('檔案格式錯誤：找不到題目資料');
+            }
+          } catch (err) {
+            alert('從雲端讀取失敗，可能是檔案已損毀。\n錯誤: ' + err.message);
+          }
         },
 
         // ================== 作答模式邏輯 ==================
@@ -417,49 +474,34 @@
           }
         },
 
-        // --- Web Audio API 音效 ---
         playSound(type) {
-          // 確保在某些瀏覽器中自動播放被封鎖時，音效引擎能喚醒
           if (audioCtx.state === 'suspended') audioCtx.resume();
-
           if (type === 'correct') {
-            // 三連叮咚音效：C5, E5, G5 (Do - Mi - So 破關感)
             const notes = [523.25, 659.25, 783.99]; 
-            
             notes.forEach((freq, index) => {
               const oscillator = audioCtx.createOscillator();
               const gainNode = audioCtx.createGain();
               oscillator.connect(gainNode);
               gainNode.connect(audioCtx.destination);
-              
               oscillator.type = 'sine';
               oscillator.frequency.value = freq;
-              
-              // 每個音階間隔 0.15 秒
               const startTime = audioCtx.currentTime + (index * 0.15);
-              
               gainNode.gain.setValueAtTime(0, startTime);
               gainNode.gain.linearRampToValueAtTime(0.5, startTime + 0.02);
               gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.15);
-              
               oscillator.start(startTime);
               oscillator.stop(startTime + 0.15);
             });
-
           } else {
-            // 錯誤音效：叭噗
             const oscillator = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
             oscillator.connect(gainNode);
             gainNode.connect(audioCtx.destination);
-            
             oscillator.type = 'sawtooth';
             oscillator.frequency.setValueAtTime(150, audioCtx.currentTime);
             oscillator.frequency.linearRampToValueAtTime(100, audioCtx.currentTime + 0.3);
-            
             gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-            
             oscillator.start(audioCtx.currentTime);
             oscillator.stop(audioCtx.currentTime + 0.3);
           }
